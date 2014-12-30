@@ -5,10 +5,10 @@ A simple class that packs bits into a byte array. Ideally for compressing data t
 
 ## Currently allows support for the following data types:
 
-bool - compresses to 1 byte
-uint - define amount of bits needed
-int - define amount of bits needed
-float - define if value should be signed along with the precision of the significand/matissa component
+* bool - compresses to 1 byte
+* uint - define amount of bits needed
+* int - define amount of bits needed
+* float - define if value should be signed along with the precision of the significand/matissa component
 
 ## Examples
 
