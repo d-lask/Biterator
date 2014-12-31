@@ -58,6 +58,24 @@ public class Biterator
         return bitCounts;
     }
 
+    public void Reset(int numBytes)
+    {
+        currentBit = 0;
+        currentByte = 0;
+
+        bytes = new byte[numBytes];
+        bitCounts.Clear();
+    }
+
+    public void Reset(byte[] data)
+    {
+        currentBit = 0;
+        currentByte = 0;
+
+        bytes = data;
+        bitCounts.Clear();
+    }
+
     /// <summary>
     /// Compresses a 32-bit unsigned integer
     /// </summary>
