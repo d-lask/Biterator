@@ -3,7 +3,7 @@ Biterator
 
 A simple class that packs bits into a byte array. Ideally for compressing data to be sent over a network.
 
-## Currently allows support for the following data types:
+## Supported Data Types:
 
 * **int** - define amount of bits needed, Range [2, 32]
 * **uint** - define amount of bits needed, Range [1, 32]
