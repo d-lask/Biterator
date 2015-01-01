@@ -58,6 +58,10 @@ public class Biterator
         return bitCounts;
     }
 
+    /// <summary>
+    /// Reset the biterator and initialize the length of the new byte array
+    /// </summary>
+    /// <param name="numBytes"></param>
     public void Reset(int numBytes)
     {
         currentBit = 0;
@@ -67,6 +71,10 @@ public class Biterator
         bitCounts.Clear();
     }
 
+    /// <summary>
+    /// Reset the biterator and initialize it with a byte array
+    /// </summary>
+    /// <param name="data"></param>
     public void Reset(byte[] data)
     {
         currentBit = 0;
@@ -76,25 +84,16 @@ public class Biterator
         bitCounts.Clear();
     }
 
-    /// <summary>
-    /// Compresses a 32-bit unsigned integer
-    /// </summary>
-    /// <param name="val">The value to compress</param>
-    /// <param name="numBits">The number of bits to represent the value. Range [1, 32]</param>
-    public void PushUInt(uint val, int numBits = 32)
+    void PushBits(int numBits, uint bits)
     {
-        AddCount(numBits);
-
-        uint mask = 0;
-        for (int i = 0; i < numBits; i++)
-            mask |= (uint)(1 << i);
-
-        uint adjustedVal = val & mask;
+		//force uint because of bitshifting behavior when it's an integer.
+		//may just switch the parameter to be a uint..
+		//uint b = (uint)bits;
 
         int bitsRead = 0;
         while (bitsRead < numBits)
         {
-            bytes[currentByte] |= (byte)((adjustedVal >> bitsRead) << currentBit);
+            bytes[currentByte] |= (byte)((bits >> bitsRead) << currentBit);
 
             int bitsLeftInByte = 8 - currentBit;
             int potentialBitsRead = numBits - bitsRead;
@@ -114,6 +113,55 @@ public class Biterator
         }
     }
 
+    int PopBits(int numBits)
+    {
+        int returnVal = 0;
+
+        int bitsRead = 0;
+        while (bitsRead < numBits)
+        {
+            byte b = bytes[currentByte];
+
+            int bitsLeftInByte = 8 - currentBit;
+            int potentialBitsRead = numBits - bitsRead;
+
+            int bitsToRead = bitsLeftInByte > potentialBitsRead ? potentialBitsRead : bitsLeftInByte;
+            int mask = 0;
+            for (int i = 0; i < bitsToRead; i++)
+                mask |= 1 << i;
+
+            byte test = (byte)((b >> currentBit) & mask);
+            returnVal |= (int)(test << bitsRead);
+
+            bitsRead += bitsToRead;
+            currentBit += bitsToRead;
+            if (currentBit >= 8)
+            {
+                currentBit = 0;
+                currentByte++;
+            }
+        }
+
+        return returnVal;
+    }
+
+    /// <summary>
+    /// Compresses a 32-bit unsigned integer
+    /// </summary>
+    /// <param name="val">The value to compress</param>
+    /// <param name="numBits">The number of bits to represent the value. Range [1, 32]</param>
+    public void PushUInt(uint val, int numBits = 32)
+    {
+        AddCount(numBits);
+
+        uint mask = 0;
+        for (int i = 0; i < numBits; i++)
+            mask |= (uint)(1 << i);
+
+		uint adjustedVal = val & mask;
+		PushBits(numBits, adjustedVal);
+    }
+
     /// <summary>
     /// Compresses a 32-bit signed integer
     /// </summary>
@@ -123,7 +171,6 @@ public class Biterator
     {
         AddCount(numBits);
 
-        int bitsRead = 0;
         int adjustedNumBits = numBits - 1; //to account for signed bit
 
         int mask = 0;
@@ -139,29 +186,7 @@ public class Biterator
 
         int adjustedVal = val & mask;
 
-        while (bitsRead < adjustedNumBits)
-        {
-            bytes[currentByte] |= (byte)((adjustedVal >> bitsRead) << currentBit);
-
-            int bitsLeftInByte = 8 - currentBit;
-            int potentialBitsRead = adjustedNumBits - bitsRead;
-
-            if (bitsLeftInByte > potentialBitsRead)
-            {
-                bitsRead += potentialBitsRead;
-                currentBit += potentialBitsRead;
-            }
-            else
-            {
-                bitsRead += bitsLeftInByte;
-
-                currentBit = 0;
-                currentByte++;
-            }
-        }
-
-        //write signed bit last
-        //byte sign = (byte)((val & 0x80000000) == 0x80000000 ? 0x01 : 0x00);
+        PushBits(adjustedNumBits, (uint)adjustedVal);
 
         byte sign = (byte)(negative ? 0x01 : 0x00);
         bytes[currentByte] |= (byte)(sign << currentBit);
@@ -175,11 +200,11 @@ public class Biterator
     }
 
     /// <summary>
-    /// Compresses a single-floating point number
+    /// Compresses a single-precision floating point number
     /// </summary>
     /// <param name="val">Value to compress</param>
     /// <param name="signed">True if the value needs to be signed</param>
-    /// <param name="mantissa">The number of bits dedicated to the precision of the fractional portion of the floating point number. Range [0, 23]</param>
+    /// <param name="mantissa">The number of bits dedicated to the precision of the fractional portion of the floating point number. Range [1, 23]</param>
     public void PushFloat(float val, bool signed = true, int mantissa = 23)
     {
         int signSize = signed ? 1 : 0;
@@ -200,53 +225,13 @@ public class Biterator
         mantissaBits |= backBits << 16;
         mantissaBits >>= (23 - mantissa);
 
-        int bitsRead = 0;
-        while (bitsRead < mantissa)
-        {
-            bytes[currentByte] |= (byte)((mantissaBits >> bitsRead) << currentBit);
-
-            int bitsLeftInByte = 8 - currentBit;
-            int potentialBitsRead = mantissa - bitsRead;
-
-            if (bitsLeftInByte > potentialBitsRead)
-            {
-                bitsRead += potentialBitsRead;
-                currentBit += potentialBitsRead;
-            }
-            else
-            {
-                bitsRead += bitsLeftInByte;
-
-                currentBit = 0;
-                currentByte++;
-            }
-        }
+        PushBits(mantissa, (uint)mantissaBits);
 
         byte frontPart = (byte)((floatBytes[3] & 0x7F) << 1);
         byte endPart = (byte)((floatBytes[2] & 0x80) >> 7);
         byte exponent = (byte)(frontPart | endPart);
 
-        bitsRead = 0;
-        while (bitsRead < exponentSize)
-        {
-            bytes[currentByte] |= (byte)((exponent >> bitsRead) << currentBit);
-
-            int bitsLeftInByte = 8 - currentBit;
-            int potentialBitsRead = exponentSize - bitsRead;
-
-            if (bitsLeftInByte > potentialBitsRead)
-            {
-                bitsRead += potentialBitsRead;
-                currentBit += potentialBitsRead;
-            }
-            else
-            {
-                bitsRead += bitsLeftInByte;
-
-                currentBit = 0;
-                currentByte++;
-            }
-        }
+        PushBits(exponentSize, (uint)exponent);
 
         if (signed)
         {
@@ -288,34 +273,7 @@ public class Biterator
     /// <returns>The restored 32-bit unsigned integer</returns>
     public uint PopUInt(int numBits)
     {
-        uint returnVal = 0;
-
-        int bitsRead = 0;
-        while (bitsRead < numBits)
-        {
-            byte b = bytes[currentByte];
-
-            int bitsLeftInByte = 8 - currentBit;
-            int potentialBitsRead = numBits - bitsRead;
-
-            int bitsToRead = bitsLeftInByte > potentialBitsRead ? potentialBitsRead : bitsLeftInByte;
-            int mask = 0;
-            for (int i = 0; i < bitsToRead; i++)
-                mask |= 1 << i;
-
-            byte test = (byte)((b >> currentBit) & mask);
-            returnVal |= (uint)(test << bitsRead);
-
-            bitsRead += bitsToRead;
-            currentBit += bitsToRead;
-            if (currentBit >= 8)
-            {
-                currentBit = 0;
-                currentByte++;
-            }
-        }
-
-        return returnVal;
+		return (uint)PopBits(numBits);
     }
 
     /// <summary>
@@ -327,32 +285,8 @@ public class Biterator
     {
         int returnVal = 0;
 
-        int bitsRead = 0;
         int adjustedNumBits = numBits - 1;
-
-        while (bitsRead < adjustedNumBits)
-        {
-            byte b = bytes[currentByte];
-
-            int bitsLeftInByte = 8 - currentBit;
-            int potentialBitsRead = adjustedNumBits - bitsRead;
-
-            int bitsToRead = bitsLeftInByte > potentialBitsRead ? potentialBitsRead : bitsLeftInByte;
-            int mask = 0;
-            for (int i = 0; i < bitsToRead; i++)
-                mask |= 1 << i;
-
-            byte test = (byte)((b >> currentBit) & mask);
-            returnVal |= (int)(test << bitsRead);
-
-            bitsRead += bitsToRead;
-            currentBit += bitsToRead;
-            if (currentBit >= 8)
-            {
-                currentBit = 0;
-                currentByte++;
-            }
-        }
+        returnVal = PopBits(adjustedNumBits);
 
         int negativeMask = 1 << currentBit;
         bool negative = (bytes[currentByte] & negativeMask) == negativeMask ? true : false;
@@ -378,47 +312,20 @@ public class Biterator
     }
 
     /// <summary>
-    /// Restores a 32-bit signed integer.
+    /// Restores a 32-bit single-precision floating point number
     /// </summary>
-    /// <param name="signed"></param>
-    /// <param name="mantissa"></param>
-    /// <returns></returns>
+    /// <param name="signed">Was the value signed when pushed?</param>
+    /// <param name="mantissa">The number of bits for the mantissa/significand portion of the value</param>
+    /// <returns>The restored 32-bit single-precision floating point number</returns>
     public float PopFloat(bool signed = true, int mantissa = 23)
     {
         byte[] floatBytes = new byte[4];
 
         int exponentSize = 8;
-
-        int bitsRead = 0;
         int mantissaPadding = 23 - mantissa;
-
-        int bitsToConvert = 0;
         int readBitCount = exponentSize + mantissa;
 
-        while (bitsRead < readBitCount)
-        {
-            byte b = bytes[currentByte];
-
-            int bitsLeftInByte = 8 - currentBit;
-            int potentialBitsRead = readBitCount - bitsRead;
-
-            int bitsToRead = bitsLeftInByte > potentialBitsRead ? potentialBitsRead : bitsLeftInByte;
-            int mask = 0;
-            for (int i = 0; i < bitsToRead; i++)
-                mask |= 1 << i;
-
-            byte test = (byte)((b >> currentBit) & mask);
-            bitsToConvert |= (int)(test << bitsRead);
-
-            bitsRead += bitsToRead;
-            currentBit += bitsToRead;
-            if (currentBit >= 8)
-            {
-                currentBit = 0;
-                currentByte++;
-            }
-        }
-
+        int bitsToConvert = PopBits(readBitCount);
         bitsToConvert <<= mantissaPadding;
 
         if (signed)
