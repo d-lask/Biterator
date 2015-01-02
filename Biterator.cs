@@ -86,10 +86,6 @@ public class Biterator
 
     void PushBits(int numBits, uint bits)
     {
-		//force uint because of bitshifting behavior when it's an integer.
-		//may just switch the parameter to be a uint..
-		//uint b = (uint)bits;
-
         int bitsRead = 0;
         while (bitsRead < numBits)
         {
